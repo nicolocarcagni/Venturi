@@ -261,6 +261,12 @@ pub(crate) enum Browsed {
     Asset(String),
 }
 
+struct MarkTarget<'a> {
+    marks: &'a mut transport::MarkRange,
+    total: FrameIdx,
+    playhead: FrameIdx,
+}
+
 struct VenturiApp {
     session: vv_session::Session,
     timeline_id: Option<TimelineId>,
@@ -975,79 +981,53 @@ impl VenturiApp {
         }
     }
 
-    /// Length of what the I/O keys mark: the preview if active, otherwise
-    /// the timeline. 0 when there is nothing to mark.
-    fn mark_target_frames(&self) -> FrameIdx {
+    fn mark_target(&mut self) -> Option<MarkTarget<'_>> {
         if self.browsing.is_some() {
             if self.preview_error.is_some() {
-                0
-            } else {
-                self.browse_total_frames()
+                return None;
             }
+            let total = self.browse_total_frames();
+            Some(MarkTarget {
+                marks: &mut self.browse_marks,
+                total,
+                playhead: self.browse_playhead,
+            })
         } else {
-            self.timeline_id
-                .map_or(0, |id| self.session.project.timelines[id].total_frames())
+            let total = self.session.project.timelines[self.timeline_id?].total_frames();
+            Some(MarkTarget {
+                marks: &mut self.timeline_state.export_marks,
+                total,
+                playhead: self.timeline_state.playhead,
+            })
         }
     }
 
     fn mark_at_playhead(&mut self, is_in: bool) {
-        let total = self.mark_target_frames();
-        if total <= 0 {
-            return;
-        }
-        let frame = if self.browsing.is_some() {
-            self.browse_playhead
-        } else {
-            self.timeline_state.playhead
-        };
-        let Some(marks) = self.mark_target() else {
+        let Some(target) = self.mark_target().filter(|target| target.total > 0) else {
             return;
         };
         if is_in {
-            marks.set_in(frame, total);
+            target.marks.set_in(target.playhead, target.total);
         } else {
-            marks.set_out(frame, total);
+            target.marks.set_out(target.playhead, target.total);
         }
     }
 
-    fn mark_target(&mut self) -> Option<&mut transport::MarkRange> {
-        if self.browsing.is_some() {
-            if self.preview_error.is_some() {
-                None
-            } else {
-                Some(&mut self.browse_marks)
-            }
-        } else if self.timeline_id.is_some() {
-            Some(&mut self.timeline_state.export_marks)
-        } else {
-            None
-        }
-    }
-
-    /// Clears In on the active preview or timeline range.
-    ///
-    /// The unset endpoint resolves to frame zero; Out remains unchanged.
     fn clear_in_point(&mut self) {
-        if let Some(marks) = self.mark_target() {
-            marks.clear_in();
+        if let Some(target) = self.mark_target() {
+            target.marks.clear_in();
         }
     }
 
-    /// Clears Out on the active preview or timeline range.
-    ///
-    /// The unset endpoint resolves to the content end; In remains unchanged.
     fn clear_out_point(&mut self) {
-        if let Some(marks) = self.mark_target() {
-            marks.clear_out();
+        if let Some(target) = self.mark_target() {
+            target.marks.clear_out();
         }
     }
 
-    /// Clears both endpoints on the active preview or timeline range.
-    ///
-    /// Both unset endpoints resolve to the full content range.
     fn clear_in_and_out(&mut self) {
-        if let Some(marks) = self.mark_target() {
-            marks.clear_all();
+        if let Some(target) = self.mark_target() {
+            target.marks.clear_all();
         }
     }
 
