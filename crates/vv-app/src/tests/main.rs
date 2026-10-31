@@ -4119,7 +4119,7 @@ fn in_out_marks_on_the_preview_trim_the_clip_dropped_on_the_timeline() {
 
 #[test]
 fn clearing_preview_marks_uses_the_active_valid_preview() {
-    let (mut app, _) = browse_fixture("clear-marks.mp4");
+    let (_dir, mut app, _) = browse_fixture("clear-marks.mp4");
     let total = app.browse_total_frames();
     app.browse_marks.set_in(10, total);
     app.browse_marks.set_out(29, total);
@@ -5574,7 +5574,7 @@ fn resetting_timeline_marks_restores_the_full_range_and_follows_new_content() {
 
 #[test]
 fn resetting_preview_marks_preserves_the_timeline_export_range() {
-    let (mut app, _) = browse_fixture("reset-preview-marks.mp4");
+    let (_dir, mut app, _) = browse_fixture("reset-preview-marks.mp4");
     make_timeline_with_clip(&mut app, 0, 0, 100);
     app.timeline_state.export_marks.set_in(20, 100);
     app.browse_marks.set_in(10, 100);
@@ -5582,4 +5582,32 @@ fn resetting_preview_marks_preserves_the_timeline_export_range() {
     app.clear_in_and_out();
     assert_eq!(app.browse_marks.resolve(100), (0, 100));
     assert_eq!(app.timeline_state.export_marks.resolve(100), (20, 100));
+}
+
+#[test]
+fn marks_can_be_cleared_but_not_set_on_an_empty_timeline() {
+    let mut app = VenturiApp::default();
+    app.ensure_timeline();
+    let marks = transport::MarkRange {
+        mark_in: Some(20),
+        mark_out: Some(60),
+    };
+    for is_in in [true, false] {
+        app.timeline_state.export_marks = marks;
+        app.mark_at_playhead(is_in);
+        assert_eq!(app.timeline_state.export_marks, marks);
+    }
+    app.clear_in_point();
+    assert_eq!(app.timeline_state.export_marks.mark_in, None);
+    assert_eq!(app.timeline_state.export_marks.mark_out, Some(60));
+    app.timeline_state.export_marks = marks;
+    app.clear_out_point();
+    assert_eq!(app.timeline_state.export_marks.mark_in, Some(20));
+    assert_eq!(app.timeline_state.export_marks.mark_out, None);
+    app.timeline_state.export_marks = marks;
+    app.clear_in_and_out();
+    assert_eq!(
+        app.timeline_state.export_marks,
+        transport::MarkRange::default()
+    );
 }
